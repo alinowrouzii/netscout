@@ -5,13 +5,16 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	redistimeseries "github.com/RedisTimeSeries/redistimeseries-go"
 	"github.com/go-redis/redis/v8"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -163,6 +166,33 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("key", val)
+
+	// ***************************Just for test****************************
+	// Connect to localhost with no password
+	var client = redistimeseries.NewClient("localhost:6379", "nohelp", nil)
+	// * key should be in combination of appName and hostAddress. eg "AppOne:localhost:4040"
+	var keyname = "mytest"
+	_, haveit := client.Info(keyname)
+	if haveit != nil {
+		client.CreateKeyWithOptions(keyname, redistimeseries.DefaultCreateOptions)
+		client.CreateKeyWithOptions(keyname+"_avg", redistimeseries.DefaultCreateOptions)
+		client.CreateRule(keyname, redistimeseries.AvgAggregation, 60, keyname+"_avg")
+	}
+	// Add sample with timestamp from server time and value 100
+	// TS.ADD mytest * 100
+	ts, err := client.AddAutoTs(keyname, 99)
+	if err != nil {
+		log.Fatal("Error:", err)
+	}
+	log.Println(ts)
+
+	res, err := client.Range(keyname, 1661800611332, 1661800981332)
+	if err != nil {
+		log.Fatal("Error:", err)
+	}
+	log.Println("here is result", res)
+	return
+	// ********************************************************************
 
 	// mux := tinymux.NewTinyMux()
 
