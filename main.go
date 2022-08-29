@@ -1,16 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"gopkg.in/yaml.v3"
 )
 
@@ -19,6 +20,9 @@ const (
 	defaultRoute = "/mterics"
 )
 
+type redisConn struct {
+	client *redis.Client
+}
 type App struct {
 	// data mutex
 	m sync.Mutex
@@ -31,6 +35,7 @@ type App struct {
 		address string
 		port    string
 	}
+	redisConn *redisConn
 }
 
 func connectionStatus(host string, port string) bool {
@@ -50,14 +55,15 @@ func (app *App) checkStatus() {
 
 	// forloop over all hosts and create goroutine for each host address
 	for appName := range app.hosts {
-		app := app.hosts[appName]
-		for appHostIndex := range app {
-			appHost := app[appHostIndex]
+		hosts := app.hosts[appName]
+		for appHostIndex := range hosts {
+			appHost := hosts[appHostIndex]
 			// fmt.Println(appHost)
 			address := appHost.address
 			port := appHost.port
 
-			go func(address string, port string) {
+			go func(address string, port string, redisConn *redisConn) {
+
 				ticker := time.NewTicker(5 * time.Second)
 				quit := make(chan struct{})
 
@@ -66,10 +72,16 @@ func (app *App) checkStatus() {
 					case <-ticker.C:
 						st := connectionStatus(address, port)
 						if st {
-							log.Println("Succeed!", address, port)
+							// redisConn.setInRedis()
+							line := fmt.Sprintf("<%s> %s:%s:Succeed", time.Now().String(), address, port)
+							redisConn.setInRedis(line)
+							fmt.Println(line)
 						} else {
-							log.Println("Failed!", address, port)
+							line := fmt.Sprintf("<%s> %s:%s:Failed", time.Now().String(), address, port)
+							redisConn.setInRedis(line)
+							fmt.Println(line)
 						}
+
 					case <-quit:
 						ticker.Stop()
 						return
@@ -77,7 +89,7 @@ func (app *App) checkStatus() {
 
 				}
 
-			}(address, port)
+			}(address, port, app.redisConn)
 		}
 
 	}
@@ -112,16 +124,51 @@ func init() {
 	flag.Parse()
 }
 
+func redisInit() *redisConn {
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	return &redisConn{
+		client: client,
+	}
+}
+
+func (conn *redisConn) setInRedis(value string) error {
+	err := conn.client.Set(ctx, value, "", 0).Err()
+	return err
+}
+
+func (conn *redisConn) getFromRedis(key string) (string, error) {
+	val, err := conn.client.Get(ctx, key).Result()
+	return val, err
+}
+
+var ctx = context.Background()
+
 func main() {
+
 	if ymlPath == "" {
 		panic("config path is required. Type --help for more info")
 	}
 	hosts, _, _ := parseYml(ymlPath)
 
+	redisConn := redisInit()
+
+	redisConn.setInRedis("shit")
+	val, err := redisConn.getFromRedis("shit")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("key", val)
+
 	// mux := tinymux.NewTinyMux()
 
 	app := &App{
-		hosts: hosts,
+		hosts:     hosts,
+		redisConn: redisConn,
 	}
 	app.checkStatus()
 
@@ -132,7 +179,6 @@ func main() {
 	// mux.GET(route, http.HandlerFunc(metric.metricsHandler))
 
 	// http.ListenAndServe(fmt.Sprintf(":%s", listenPort), mux)
-
 }
 
 func splitQoutes(s string) []string {
