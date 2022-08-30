@@ -13,7 +13,6 @@ import (
 	"time"
 
 	redistimeseries "github.com/RedisTimeSeries/redistimeseries-go"
-	"github.com/go-redis/redis/v8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,7 +23,7 @@ const (
 )
 
 type redisConn struct {
-	client *redis.Client
+	client *redistimeseries.Client
 }
 type App struct {
 	// data mutex
@@ -59,6 +58,7 @@ func (app *App) checkStatus() {
 	// forloop over all hosts and create goroutine for each host address
 	for appName := range app.hosts {
 		hosts := app.hosts[appName]
+
 		for appHostIndex := range hosts {
 			appHost := hosts[appHostIndex]
 			// fmt.Println(appHost)
@@ -66,8 +66,8 @@ func (app *App) checkStatus() {
 			port := appHost.port
 
 			go func(address string, port string, redisConn *redisConn) {
-
-				ticker := time.NewTicker(5 * time.Second)
+				addressPortPair := fmt.Sprintf("%s:%s", address, port)
+				ticker := time.NewTicker(1 * time.Second)
 				quit := make(chan struct{})
 
 				for {
@@ -76,13 +76,28 @@ func (app *App) checkStatus() {
 						st := connectionStatus(address, port)
 						if st {
 							// redisConn.setInRedis()
-							line := fmt.Sprintf("<%s> %s:%s:Succeed", time.Now().String(), address, port)
-							redisConn.setInRedis(line)
-							fmt.Println(line)
+							// line := fmt.Sprintf("<%s> %s:%s:Succeed", time.Now().String(), address, port)
+							// fmt.Println(line)
+							log.Println("shittttttttttt in if", addressPortPair)
+							app.l.Lock()
+							err := redisConn.setInRedis("myapp", 2, addressPortPair)
+							time.Sleep(time.Millisecond)
+							app.l.Unlock()
+							if err != nil {
+								fmt.Println("err in goroutine", err)
+							}
 						} else {
-							line := fmt.Sprintf("<%s> %s:%s:Failed", time.Now().String(), address, port)
-							redisConn.setInRedis(line)
-							fmt.Println(line)
+							// line := fmt.Sprintf("<%s> %s:%s:Failed", time.Now().String(), address, port)
+							// fmt.Println(line)
+							log.Println("shittttttttttt in else", addressPortPair)
+							// time.Sleep(waitingTime)
+							app.l.Lock()
+							err := redisConn.setInRedis("myapp", 1, addressPortPair)
+							time.Sleep(time.Millisecond)
+							app.l.Unlock()
+							if err != nil {
+								fmt.Println("err in goroutine", err)
+							}
 						}
 
 					case <-quit:
@@ -127,27 +142,67 @@ func init() {
 	flag.Parse()
 }
 
-func redisInit() *redisConn {
-	client := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+func redisInit(keyName string) *redisConn {
+	client := redistimeseries.NewClient("localhost:6379", "nohelp", nil)
+
+	_, haveit := client.Info(keyName)
+	if haveit != nil {
+		client.CreateKeyWithOptions(keyName, redistimeseries.CreateOptions{
+			Uncompressed:   false,
+			RetentionMSecs: 86400000,
+			Labels: map[string]string{
+				"localhost:4040": "1",
+				"localhost:4041": "1",
+				"localhost:80":   "1",
+			},
+			DuplicatePolicy: redistimeseries.LastDuplicatePolicy,
+		})
+		client.CreateKeyWithOptions(keyName+"_avg", redistimeseries.CreateOptions{
+			Uncompressed:   false,
+			RetentionMSecs: 86400000,
+			Labels: map[string]string{
+				"localhost:4040": "1",
+				// "localhost:4041": "1",
+				// "localhost:80":   "1",
+			},
+			DuplicatePolicy: redistimeseries.LastDuplicatePolicy,
+		})
+		client.CreateRule(keyName, redistimeseries.AvgAggregation, 60, keyName+"_avg")
+	}
 
 	return &redisConn{
 		client: client,
 	}
 }
 
-func (conn *redisConn) setInRedis(value string) error {
-	err := conn.client.Set(ctx, value, "", 0).Err()
+func (conn *redisConn) setInRedis(keyname string, value float64, label string) error {
+	ts, err := conn.client.AddAutoTsWithOptions(keyname, value, redistimeseries.CreateOptions{
+		Uncompressed:   false,
+		RetentionMSecs: 0,
+		Labels: map[string]string{
+			label: "1",
+		},
+		// DuplicatePolicy: redistimeseries.LastDuplicatePolicy,
+	})
+
+	log.Println("timestamp", ts)
 	return err
 }
 
-func (conn *redisConn) getFromRedis(key string) (string, error) {
-	val, err := conn.client.Get(ctx, key).Result()
-	return val, err
+func (conn *redisConn) getFromRedis() error {
+	ts, err := conn.client.MultiRangeWithOptions(1661751152250, 1661951152250, redistimeseries.MultiRangeOptions{
+		WithLabels: true,
+	}, "localhost:4040=1")
+
+	log.Println("============")
+	log.Println("timestamp", ts)
+	return err
 }
+
+// func (conn *redisConn) getFromRedis(key string) (string, error) {
+// 	val, err := conn.client.Get(ctx, key).Result()
+// 	return val, err
+// }
 
 var ctx = context.Background()
 
@@ -158,40 +213,48 @@ func main() {
 	}
 	hosts, _, _ := parseYml(ymlPath)
 
-	redisConn := redisInit()
+	redisConn := redisInit("myapp")
 
-	redisConn.setInRedis("shit")
-	val, err := redisConn.getFromRedis("shit")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("key", val)
+	// redisConn.setInRedis("shit")
+	// val, err := redisConn.getFromRedis("shit")
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println("key", val)
 
 	// ***************************Just for test****************************
 	// Connect to localhost with no password
-	var client = redistimeseries.NewClient("localhost:6379", "nohelp", nil)
-	// * key should be in combination of appName and hostAddress. eg "AppOne:localhost:4040"
-	var keyname = "mytest"
-	_, haveit := client.Info(keyname)
-	if haveit != nil {
-		client.CreateKeyWithOptions(keyname, redistimeseries.DefaultCreateOptions)
-		client.CreateKeyWithOptions(keyname+"_avg", redistimeseries.DefaultCreateOptions)
-		client.CreateRule(keyname, redistimeseries.AvgAggregation, 60, keyname+"_avg")
-	}
-	// Add sample with timestamp from server time and value 100
-	// TS.ADD mytest * 100
-	ts, err := client.AddAutoTs(keyname, 99)
-	if err != nil {
-		log.Fatal("Error:", err)
-	}
-	log.Println(ts)
+	// var client = redistimeseries.NewClient("localhost:6379", "nohelp", nil)
+	// // * key should be in combination of appName and hostAddress. eg "AppOne:localhost:4040"
+	// var keyname = "mytest"
+	// _, haveit := client.Info(keyname)
+	// if haveit != nil {
+	// 	client.CreateKeyWithOptions(keyname, redistimeseries.CreateOptions{
+	// 		Uncompressed:   false,
+	// 		RetentionMSecs: 86400000,
+	// 		Labels: map[string]string{
+	// 			"localhost:4040": "1",
+	// 			"localhost:4041": "1",
+	// 			"localhost:80":   "1",
+	// 		},
+	// 	})
+	// 	client.CreateKeyWithOptions(keyname+"_avg", redistimeseries.DefaultCreateOptions)
+	// 	client.CreateRule(keyname, redistimeseries.AvgAggregation, 60, keyname+"_avg")
+	// }
+	// // Add sample with timestamp from server time and value 100
+	// // TS.ADD mytest * 100
+	// ts, err := client.AddAutoTs(keyname, 99)
+	// if err != nil {
+	// 	log.Fatal("Error:", err)
+	// }
+	// log.Println(ts)
 
-	res, err := client.Range(keyname, 1661800611332, 1661800981332)
-	if err != nil {
-		log.Fatal("Error:", err)
-	}
-	log.Println("here is result", res)
-	return
+	// res, err := client.Range(keyname, 1661800611332, 1661800981332)
+	// if err != nil {
+	// 	log.Fatal("Error:", err)
+	// }
+	// log.Println("here is result", res)
+	// return
 	// ********************************************************************
 
 	// mux := tinymux.NewTinyMux()
@@ -200,7 +263,8 @@ func main() {
 		hosts:     hosts,
 		redisConn: redisConn,
 	}
-	app.checkStatus()
+	// app.checkStatus()
+	app.redisConn.getFromRedis()
 
 	ch := make(chan string)
 	<-ch
