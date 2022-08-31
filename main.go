@@ -8,11 +8,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
-	redistimeseries "github.com/RedisTimeSeries/redistimeseries-go"
+	// "github.com/go-redis/redis/v8"
+	"github.com/gomodule/redigo/redis"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,7 +25,7 @@ const (
 )
 
 type redisConn struct {
-	client *redistimeseries.Client
+	pool *redis.Pool
 }
 type App struct {
 	// data mutex
@@ -80,24 +82,24 @@ func (app *App) checkStatus() {
 							// fmt.Println(line)
 							log.Println("shittttttttttt in if", addressPortPair)
 							app.l.Lock()
-							err := redisConn.setInRedis("myapp", 2, addressPortPair)
+							// err := redisConn.setInRedis("myapp", 2, addressPortPair)
 							time.Sleep(time.Millisecond)
 							app.l.Unlock()
-							if err != nil {
-								fmt.Println("err in goroutine", err)
-							}
+							// if err != nil {
+							// 	fmt.Println("err in goroutine", err)
+							// }
 						} else {
 							// line := fmt.Sprintf("<%s> %s:%s:Failed", time.Now().String(), address, port)
 							// fmt.Println(line)
 							log.Println("shittttttttttt in else", addressPortPair)
 							// time.Sleep(waitingTime)
 							app.l.Lock()
-							err := redisConn.setInRedis("myapp", 1, addressPortPair)
+							// err := redisConn.setInRedis("myapp", 1, addressPortPair)
 							time.Sleep(time.Millisecond)
 							app.l.Unlock()
-							if err != nil {
-								fmt.Println("err in goroutine", err)
-							}
+							// if err != nil {
+							// 	fmt.Println("err in goroutine", err)
+							// }
 						}
 
 					case <-quit:
@@ -142,58 +144,121 @@ func init() {
 	flag.Parse()
 }
 
-func redisInit(keyName string) *redisConn {
-	client := redistimeseries.NewClient("localhost:6379", "nohelp", nil)
+func newPool(server string) *redis.Pool {
 
-	_, haveit := client.Info(keyName)
-	if haveit != nil {
-		client.CreateKeyWithOptions(keyName, redistimeseries.CreateOptions{
-			Uncompressed:   false,
-			RetentionMSecs: 86400000,
-			Labels: map[string]string{
-				"localhost:4040": "1",
-				"localhost:4041": "1",
-				"localhost:80":   "1",
-			},
-			DuplicatePolicy: redistimeseries.LastDuplicatePolicy,
-		})
-		client.CreateKeyWithOptions(keyName+"_avg", redistimeseries.CreateOptions{
-			Uncompressed:   false,
-			RetentionMSecs: 86400000,
-			Labels: map[string]string{
-				"localhost:4040": "1",
-				// "localhost:4041": "1",
-				// "localhost:80":   "1",
-			},
-			DuplicatePolicy: redistimeseries.LastDuplicatePolicy,
-		})
-		client.CreateRule(keyName, redistimeseries.AvgAggregation, 60, keyName+"_avg")
-	}
+	return &redis.Pool{
 
-	return &redisConn{
-		client: client,
+		MaxIdle:     3,
+		IdleTimeout: 240 * time.Second,
+
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", server)
+			if err != nil {
+				return nil, err
+			}
+			return c, err
+		},
+
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
 	}
 }
 
-func (conn *redisConn) setInRedis(keyname string, value float64, label string) error {
-	ts, err := conn.client.AddAutoTsWithOptions(keyname, value, redistimeseries.CreateOptions{
-		Uncompressed:   false,
-		RetentionMSecs: 0,
-		Labels: map[string]string{
-			label: "1",
-		},
-		// DuplicatePolicy: redistimeseries.LastDuplicatePolicy,
-	})
+func redisInit() *redisConn {
+	// client := redis.DialDatabase(0)
+
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = ":6379"
+	}
+	pool := newPool(redisHost)
+
+	// fmt.Println(pool)
+
+	// conn := pool.Get()
+
+	// shit := map[string]string{
+	// 	"localhost:4040": "1",
+	// 	"localhost:4041": "1",
+	// 	"localhost:80":   "1",
+	// 	"localhost:4042": "1",
+	// }
+
+	// query := "TS.CTREATE shit LABELS "
+	// argsArr := make([]string, 0)
+	// for k, v := range shit {
+	// 	argsArr = append(argsArr, k, v)
+	// }
+	// fmt.Println("here is your query", query)
+
+	// fmt.Println(reply)
+
+	// fmt.Println("=============================================================")
+	// reply, err = conn.Do("TS.ALTER", "shit2", "LABELS", "localhost:4042", "2")
+	// // reply, err := conn.Do("TS.ALTER", "shit", "LABELS", argsArr)
+
+	// if err != nil {
+	// 	log.Println("shith! ", err)
+	// }
+
+	// fmt.Println(reply)
+
+	// fmt.Println("=============================================================")
+	// reply, err = redis.Int64(conn.Do("TS.ADD", "shit", "*", fmt.Sprintf("%d", 1)))
+	// if err != nil {
+	// 	log.Fatal("shit!! ", err)
+	// }
+	// fmt.Println(reply)
+
+	// reply, err = redis.Int64(conn.Do("TS.ADD", "shit2", "*", fmt.Sprintf("%d", 2), "LABELS", "localhost:4042", "2"))
+	// if err != nil {
+	// 	log.Fatal("shit2!! ", err)
+	// }
+
+	// fmt.Println(reply)
+
+	// // TS.MRANGE - + FILTER area_id=32
+
+	// reply, err = conn.Do("TS.MRANGE", "-", "+", "FILTER", "localhost:4042=1")
+	// if err != nil {
+	// 	log.Fatal("shit23!! ", err)
+	// }
+
+	// fmt.Println(reply)
+
+	return &redisConn{
+		pool: pool,
+	}
+}
+
+func (conn *redisConn) addKeyToRedis(keyname string) error {
+	redisConn := conn.pool.Get()
+	defer redisConn.Close()
+
+	ts, err := redisConn.Do("TS.CREATE", keyname)
+
+	log.Println("addKey", ts, err)
+	return err
+}
+func (conn *redisConn) setInRedis(keyname string, value float64) error {
+	redisConn := conn.pool.Get()
+	defer redisConn.Close()
+
+	ts, err := redisConn.Do("TS.ADD", keyname, "*", value)
 
 	log.Println("timestamp", ts)
 	return err
 }
 
-func (conn *redisConn) getFromRedis() error {
-	ts, err := conn.client.MultiRangeWithOptions(1661751152250, 1661951152250, redistimeseries.MultiRangeOptions{
-		WithLabels: true,
-	}, "localhost:4040=1")
+func (conn *redisConn) getFromRedis(keyName string, from int64, to int64) error {
+	redisConn := conn.pool.Get()
+	defer redisConn.Close()
 
+	// ts, err := redisConn.Do("TS.RANGE", keyName, "-", "+")
+	// ts, err := redisConn.Do("TS.RANGE", keyName, "-", "+", "FILTER_BY_TS", from, to)
+	ts, err := redisConn.Do("TS.RANGE", keyName, from, to)
 	log.Println("============")
 	log.Println("timestamp", ts)
 	return err
@@ -213,7 +278,7 @@ func main() {
 	}
 	hosts, _, _ := parseYml(ymlPath)
 
-	redisConn := redisInit("myapp")
+	redisConn := redisInit()
 
 	// redisConn.setInRedis("shit")
 	// val, err := redisConn.getFromRedis("shit")
@@ -264,7 +329,17 @@ func main() {
 		redisConn: redisConn,
 	}
 	// app.checkStatus()
-	app.redisConn.getFromRedis()
+
+	app.redisConn.addKeyToRedis("shit")
+	app.redisConn.setInRedis("shit", 1)
+	// app.redisConn.setInRedis("shit", 1)
+	// app.redisConn.setInRedis("shit", 2)
+	time.Sleep(time.Second)
+	// app.redisConn.setInRedis("shit", 2)
+	// time.Sleep(time.Second)
+	// app.redisConn.setInRedis("shit", 1)
+	// time.Sleep(time.Second)
+	app.redisConn.getFromRedis("shit", 1661947359361, 1661976404011)
 
 	ch := make(chan string)
 	<-ch
