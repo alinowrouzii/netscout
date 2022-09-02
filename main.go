@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -41,6 +42,23 @@ type App struct {
 		port    string
 	}
 	redisConn *redisConn
+}
+
+type queryBody struct {
+	Range struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"range"`
+	IntervalMs int64 `json:"intervalMs"`
+	Targets    []struct {
+		Target string `json:"target"`
+		Type   string `json:"type"`
+	} `json:"targets"`
+}
+
+type timeSeriResponse struct {
+	Target     string          `json:"target"`
+	Datapoints [][]interface{} `json:"datapoints"`
 }
 
 func connectionStatus(host string, port string) bool {
@@ -184,14 +202,40 @@ func (conn *redisConn) setInRedis(keyname string, value float64) error {
 	return err
 }
 
-func (conn *redisConn) getFromRedis(keyName string, from int64, to int64) error {
+func (conn *redisConn) getFromRedis(keyName string, from int64, to int64, bucketSize float64) (*timeSeriResponse, error) {
 	redisConn := conn.pool.Get()
 	defer redisConn.Close()
+	fmt.Println("from to", from, to, bucketSize)
 
-	ts, err := redisConn.Do("TS.RANGE", keyName, from, to)
+	dataPoints, err := redisConn.Do("TS.RANGE", keyName, from, to, "AGGREGATION", "avg", bucketSize)
+	// dataPoints, err := redisConn.Do("TS.RANGE", keyName, from, to)
+
+	if err != nil {
+		return nil, err
+	}
+
+	dataPointsInterface, ok := dataPoints.([]interface{})
+	if !ok {
+		return nil, errors.New("there is a fucking error when ranging over timeseries")
+	}
+	dataPointsRes := make([][]interface{}, 0)
+	for _, ts := range dataPointsInterface {
+		tsInterface, ok := ts.([]interface{})
+		if !ok {
+			return nil, errors.New("there is a fucking error when ranging over timeseries")
+		}
+		// here we need to reverse the timeserie and value
+		tsInterface = []interface{}{tsInterface[1], tsInterface[0]}
+		dataPointsRes = append(dataPointsRes, tsInterface)
+
+	}
+	res := &timeSeriResponse{
+		Target:     keyName,
+		Datapoints: dataPointsRes,
+	}
 	log.Println("============")
-	log.Println("timestamp", ts)
-	return err
+	log.Println("timestamp", res)
+	return res, err
 }
 
 func (conn *redisConn) scanKeys(keyChann chan string, cursor int) {
@@ -286,6 +330,7 @@ func (conn *redisConn) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (conn *redisConn) searchHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("ereeeeeeeeeeeeee")
 
 	// channel with bufferSize 100
 	keyChann := make(chan string, 100)
@@ -301,12 +346,74 @@ func (conn *redisConn) searchHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(keys)
 }
 
+func (conn *redisConn) annotationHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
+func (conn *redisConn) queryHandler(w http.ResponseWriter, r *http.Request) {
+
+	var q queryBody
+	// fmt.Println(r.Body, "here is body")
+	err := json.NewDecoder(r.Body).Decode(&q)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("bad request!"))
+	}
+
+	fmt.Println("targets...", q.Targets, q.IntervalMs)
+	// res := []timeSeriResponse{
+	// 	{
+	// 		Target: "localhost:4041",
+	// 		Datapoints: [][]interface{}{
+	// 			{622, 1662124539},
+	// 			{365, 1662124539},
+	// 			{365, 1662124539},
+	// 		},
+	// 	},
+	// 	{
+	// 		Target: "localhost:80",
+	// 		Datapoints: [][]interface{}{
+	// 			{622, 1662124539},
+	// 			{365, 1662124539},
+	// 			{365, 1662124539},
+	// 		},
+	// 	},
+	// }
+	// json.NewEncoder(w).Encode(res)
+
+	// res chan with bufferSize=10
+	fmt.Println("here is time", q.Range.From)
+	resChan := make(chan timeSeriResponse, 10)
+	fromTime, err := time.Parse(time.RFC3339, q.Range.From)
+	toTime, err := time.Parse(time.RFC3339, q.Range.To)
+	for _, target := range q.Targets {
+		targetName := target.Target
+		go func(conn *redisConn, resChann chan timeSeriResponse, targetName string, from int64, to int64, interval int64) {
+			res, err := conn.getFromRedis(targetName, from, to, float64(interval))
+
+			if err == nil {
+				resChann <- *res
+			} else {
+				log.Println("fuck", err)
+			}
+		}(conn, resChan, targetName, fromTime.UnixMilli(), toTime.UnixMilli(), q.IntervalMs)
+	}
+	result := make([]timeSeriResponse, 0)
+	for _ = range q.Targets {
+		res := <-resChan
+		result = append(result, res)
+	}
+	json.NewEncoder(w).Encode(result)
+
+}
+
 func corsMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// w.Header().Set("Access-Control-Allow-Origin", "localhost:3000")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+		// log.Println("hellllow rodl")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding")
 		h.ServeHTTP(w, r)
 	})
 
@@ -314,14 +421,14 @@ func corsMiddleware(h http.Handler) http.Handler {
 
 func optionsMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("hellllllo")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("OK"))
 			return
 		}
+		fmt.Println(r.URL, r.Method, "inside op")
+		h.ServeHTTP(w, r)
 	})
-
 }
 
 var ctx = context.Background()
@@ -341,19 +448,16 @@ func main() {
 		hosts:     hosts,
 		redisConn: redisConn,
 	}
+	// redisConn.getFromRedis("localhost:80", 1662115224328, 1662135224328, float64(100))
 	// app.checkStatus()
-
-	// for {
-	// 	app.redisConn.getFromRedis("localhost:80", 1661947359361, 1661976404011)
-	// 	time.Sleep(time.Second)
-	// }
-
 	// ch := make(chan string)
 	// <-ch
 
-	// fmt.Println(route, listenPort)
 	mux.Use(corsMiddleware)
-	mux.GET("/search", http.HandlerFunc(redisConn.searchHandler))
+	mux.Use(optionsMiddleware)
+	mux.POST("/search", http.HandlerFunc(redisConn.searchHandler))
+	mux.POST("/query", http.HandlerFunc(redisConn.queryHandler))
+	mux.GET("/annotation", http.HandlerFunc(redisConn.annotationHandler))
 	mux.GET("/", http.HandlerFunc(redisConn.healthHandler))
 
 	http.ListenAndServe(fmt.Sprintf(":%s", listenPort), mux)

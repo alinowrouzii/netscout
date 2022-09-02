@@ -1,5 +1,5 @@
-github.com/alinowrouzii/tiny-mux v1.0.2 h1:CUNHJvljzdYj53wQBVuAOVDYa0CL+zaev2YDCrAyNrA=
-github.com/alinowrouzii/tiny-mux v1.0.2/go.mod h1:LINXynt8VEI+Bg/33Zyf81hLzG72AHz3WktNbmoOzQQ=
+github.com/alinowrouzii/tiny-mux v1.0.4 h1:43Mo6+WFY/oYgJW1vJDSm8wyZ0nNAT7XzjhxyH8p73c=
+github.com/alinowrouzii/tiny-mux v1.0.4/go.mod h1:LINXynt8VEI+Bg/33Zyf81hLzG72AHz3WktNbmoOzQQ=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gomodule/redigo v1.8.2 h1:H5XSIre1MB5NbPYFp+i1NBbb5qN1W8Y8YAQoAYbkm8k=
