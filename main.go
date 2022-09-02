@@ -280,12 +280,16 @@ func (conn *redisConn) addKeys(keyChann chan string, goodByeChann chan []string)
 	goodByeChann <- keys
 }
 
+func (conn *redisConn) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
 func (conn *redisConn) searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	// channel with bufferSize 100
 	keyChann := make(chan string, 100)
 	goodByeChann := make(chan []string)
-	// keys := make([]string, 0, 100)
 
 	go conn.scanKeys(keyChann, 0)
 
@@ -294,17 +298,31 @@ func (conn *redisConn) searchHandler(w http.ResponseWriter, r *http.Request) {
 	keys := <-goodByeChann
 	close(goodByeChann)
 
-	// w.Write([]byte(keys))
-
-	log.Println("keys", keys)
 	json.NewEncoder(w).Encode(keys)
-
-	log.Println("fuck you and bye!")
 }
 
-// func (conn *redisConn) searchHandlerFunc(w http.ResponseWriter, r http.Request) {
-// 	conn.searchHandler()
-// }
+func corsMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// w.Header().Set("Access-Control-Allow-Origin", "localhost:3000")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+		h.ServeHTTP(w, r)
+	})
+
+}
+
+func optionsMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("hellllllo")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+			return
+		}
+	})
+
+}
 
 var ctx = context.Background()
 
@@ -316,9 +334,6 @@ func main() {
 	hosts, listenPort, _ := parseYml(ymlPath)
 
 	redisConn := redisInit(":6379")
-
-	// redisConn.searchHandler()
-	// return
 
 	mux := tinymux.NewTinyMux()
 
@@ -337,7 +352,9 @@ func main() {
 	// <-ch
 
 	// fmt.Println(route, listenPort)
+	mux.Use(corsMiddleware)
 	mux.GET("/search", http.HandlerFunc(redisConn.searchHandler))
+	mux.GET("/", http.HandlerFunc(redisConn.healthHandler))
 
 	http.ListenAndServe(fmt.Sprintf(":%s", listenPort), mux)
 }
