@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	defaultPort = "4000"
+	defaultPort      = "4000"
+	defaultRedisAddr = ":6379"
 )
 
 type App struct {
@@ -209,8 +210,8 @@ func main() {
 	if ymlPath == "" {
 		panic("config path is required. Type --help for more info")
 	}
-	hosts, listenPort := parseYml(ymlPath)
-	redisConn := redisTimeSeries.RedisInit(":6379")
+	hosts, listenPort, redisAddr := parseYml(ymlPath)
+	redisConn := redisTimeSeries.RedisInit(redisAddr)
 
 	mux := tinymux.NewTinyMux()
 	app := &App{
@@ -218,7 +219,7 @@ func main() {
 		redisConn: redisConn,
 	}
 
-	// app.checkStatus()
+	app.checkStatus()
 
 	mux.Use(corsMiddleware)
 	mux.Use(optionsMiddleware)
@@ -244,7 +245,7 @@ func splitQoutes(s string) []string {
 func parseYml(ymlPath string) (map[string][]struct {
 	address string
 	port    string
-}, string) {
+}, string, string) {
 	parsedYml := make(map[interface{}]interface{})
 	data, err := ioutil.ReadFile(ymlPath)
 	fmt.Println(parsedYml)
@@ -267,6 +268,8 @@ func parseYml(ymlPath string) (map[string][]struct {
 
 	main, ok := parsedYml["main"]
 	parsedListen := defaultPort
+	parsedRedisAddr := defaultRedisAddr
+
 	if ok {
 		parsedMain, ok := main.(map[string]interface{})
 		if !ok {
@@ -276,6 +279,14 @@ func parseYml(ymlPath string) (map[string][]struct {
 		listen, ok := parsedMain["listen"]
 		if ok {
 			parsedListen, ok = listen.(string)
+			if !ok {
+				panic("invalid yaml format")
+			}
+		}
+
+		redisAddr, ok := parsedMain["redisAddr"]
+		if ok {
+			parsedRedisAddr, ok = redisAddr.(string)
 			if !ok {
 				panic("invalid yaml format")
 			}
@@ -332,5 +343,5 @@ func parseYml(ymlPath string) (map[string][]struct {
 
 	fmt.Println(parsedListen)
 	fmt.Println(hostsResult)
-	return hostsResult, parsedListen
+	return hostsResult, parsedListen, parsedRedisAddr
 }
