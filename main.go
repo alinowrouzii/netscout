@@ -149,7 +149,7 @@ func (app *App) queryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// res chan with bufferSize=10
-	fmt.Println("here is time", q.Range.From, q.IntervalMs)
+	fmt.Println("here is time", q.Range.From, q.Range.To, q.IntervalMs)
 	resChan := make(chan [2]interface{}, 10)
 	fromTime, err := time.Parse(time.RFC3339, q.Range.From)
 	toTime, err := time.Parse(time.RFC3339, q.Range.To)
@@ -162,10 +162,12 @@ func (app *App) queryHandler(w http.ResponseWriter, r *http.Request) {
 		res := <-resChan
 		target, ok := res[0].(string)
 		if !ok {
+			log.Println("NotOK2")
 			continue
 		}
 		datapoints, ok := res[1].([][]interface{})
 		if !ok {
+			log.Println("NotOK")
 			continue
 		}
 		timeSeriResponse := timeSeriResponse{

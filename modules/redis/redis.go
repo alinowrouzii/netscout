@@ -83,10 +83,9 @@ func (conn *RedisConn) SetInRedis(keyname string, value float64) error {
 func (conn *RedisConn) GetFromRedis(keyName string, from int64, to int64, bucketSize float64) ([][]interface{}, *string, error) {
 	redisConn := conn.pool.Get()
 	defer redisConn.Close()
-	fmt.Println("from to", from, to, bucketSize)
+	fmt.Println("from to", from, to, bucketSize, keyName)
 
 	dataPoints, err := redisConn.Do("TS.RANGE", keyName, from, to, "AGGREGATION", "avg", bucketSize)
-	// dataPoints, err := redisConn.Do("TS.RANGE", keyName, from, to)
 
 	if err != nil {
 		return nil, nil, err
