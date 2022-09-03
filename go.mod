@@ -3,7 +3,7 @@ module github.com/alinowrouzii/network-status-checker
 go 1.19
 
 require (
-	github.com/alinowrouzii/tiny-mux v1.0.4
+	github.com/alinowrouzii/tiny-mux v1.0.5
 	github.com/gomodule/redigo v1.8.2
 	gopkg.in/yaml.v3 v3.0.1
 )
