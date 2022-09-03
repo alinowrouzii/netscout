@@ -21,16 +21,9 @@ import (
 )
 
 const (
-	defaultPort  = "4000"
-	defaultRoute = "/mterics"
-	// retention time is one day (ms)
-	redisRetentionTime = 86400000
-	// redisRetentionTime = 10000
+	defaultPort = "4000"
 )
 
-//	type redisConn struct {
-//		pool *redis.Pool
-//	}
 type App struct {
 	l sync.Mutex
 
@@ -79,7 +72,6 @@ func (app *App) checkStatus() {
 
 		for appHostIndex := range hosts {
 			appHost := hosts[appHostIndex]
-			// fmt.Println(appHost)
 			address := appHost.address
 			port := appHost.port
 
@@ -157,29 +149,32 @@ func (app *App) queryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// res chan with bufferSize=10
-	fmt.Println("here is time", q.Range.From)
-	resChan := make(chan []interface{}, 10)
+	fmt.Println("here is time", q.Range.From, q.IntervalMs)
+	resChan := make(chan [2]interface{}, 10)
 	fromTime, err := time.Parse(time.RFC3339, q.Range.From)
 	toTime, err := time.Parse(time.RFC3339, q.Range.To)
 	for _, target := range q.Targets {
 		targetName := target.Target
-		go func(conn *redisTimeSeries.RedisConn, resChann chan []interface{}, targetName string, from int64, to int64, interval int64) {
-			res, err := conn.GetFromRedis(targetName, from, to, float64(interval))
-
-			if err == nil {
-				resChann <- res
-			} else {
-				log.Println("fuck", err)
-			}
-		}(app.redisConn, resChan, targetName, fromTime.UnixMilli(), toTime.UnixMilli(), q.IntervalMs)
+		go app.redisConn.GetTimeSeriesfunc(resChan, targetName, fromTime.UnixMilli(), toTime.UnixMilli(), q.IntervalMs)
 	}
-	result := make([]interface{}, 0)
+	result := make([]timeSeriResponse, 0)
 	for _ = range q.Targets {
 		res := <-resChan
-		result = append(result, res)
+		target, ok := res[0].(string)
+		if !ok {
+			continue
+		}
+		datapoints, ok := res[1].([][]interface{})
+		if !ok {
+			continue
+		}
+		timeSeriResponse := timeSeriResponse{
+			Target:     target,
+			Datapoints: datapoints,
+		}
+		result = append(result, timeSeriResponse)
 	}
 	json.NewEncoder(w).Encode(result)
-
 }
 
 func corsMiddleware(h http.Handler) http.Handler {
@@ -212,7 +207,7 @@ func main() {
 	if ymlPath == "" {
 		panic("config path is required. Type --help for more info")
 	}
-	hosts, listenPort, _ := parseYml(ymlPath)
+	hosts, listenPort := parseYml(ymlPath)
 	redisConn := redisTimeSeries.RedisInit(":6379")
 
 	mux := tinymux.NewTinyMux()
@@ -220,6 +215,8 @@ func main() {
 		hosts:     hosts,
 		redisConn: redisConn,
 	}
+
+	// app.checkStatus()
 
 	mux.Use(corsMiddleware)
 	mux.Use(optionsMiddleware)
@@ -245,7 +242,7 @@ func splitQoutes(s string) []string {
 func parseYml(ymlPath string) (map[string][]struct {
 	address string
 	port    string
-}, string, string) {
+}, string) {
 	parsedYml := make(map[interface{}]interface{})
 	data, err := ioutil.ReadFile(ymlPath)
 	fmt.Println(parsedYml)
@@ -268,7 +265,6 @@ func parseYml(ymlPath string) (map[string][]struct {
 
 	main, ok := parsedYml["main"]
 	parsedListen := defaultPort
-	parsedRoute := defaultRoute
 	if ok {
 		parsedMain, ok := main.(map[string]interface{})
 		if !ok {
@@ -278,14 +274,6 @@ func parseYml(ymlPath string) (map[string][]struct {
 		listen, ok := parsedMain["listen"]
 		if ok {
 			parsedListen, ok = listen.(string)
-			if !ok {
-				panic("invalid yaml format")
-			}
-		}
-
-		route, ok := parsedMain["route"]
-		if ok {
-			parsedRoute, ok = route.(string)
 			if !ok {
 				panic("invalid yaml format")
 			}
@@ -341,7 +329,6 @@ func parseYml(ymlPath string) (map[string][]struct {
 	}
 
 	fmt.Println(parsedListen)
-	fmt.Println(parsedRoute)
 	fmt.Println(hostsResult)
-	return hostsResult, parsedListen, parsedRoute
+	return hostsResult, parsedListen
 }
