@@ -182,13 +182,11 @@ func (app *App) queryHandler(w http.ResponseWriter, r *http.Request) {
 
 func corsMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// log.Println("hellllow rodl")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding")
 		h.ServeHTTP(w, r)
 	})
-
 }
 
 func optionsMiddleware(h http.Handler) http.Handler {
@@ -198,7 +196,6 @@ func optionsMiddleware(h http.Handler) http.Handler {
 			w.Write([]byte("OK"))
 			return
 		}
-		fmt.Println(r.URL, r.Method, "inside op")
 		h.ServeHTTP(w, r)
 	})
 }
@@ -219,7 +216,7 @@ func main() {
 		redisConn: redisConn,
 	}
 
-	app.checkStatus()
+	// app.checkStatus()
 
 	mux.Use(corsMiddleware)
 	mux.Use(optionsMiddleware)

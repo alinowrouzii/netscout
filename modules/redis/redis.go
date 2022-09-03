@@ -80,7 +80,7 @@ func (conn *RedisConn) SetInRedis(keyname string, value float64) error {
 	return err
 }
 
-func (conn *RedisConn) GetFromRedis(keyName string, from int64, to int64, bucketSize float64) ([][]interface{}, *string, error) {
+func (conn *RedisConn) GetFromRedis(keyName string, from int64, to int64, bucketSize float64) ([][]interface{}, error) {
 	redisConn := conn.pool.Get()
 	defer redisConn.Close()
 	fmt.Println("from to", from, to, bucketSize, keyName)
@@ -88,18 +88,18 @@ func (conn *RedisConn) GetFromRedis(keyName string, from int64, to int64, bucket
 	dataPoints, err := redisConn.Do("TS.RANGE", keyName, from, to, "AGGREGATION", "avg", bucketSize)
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	dataPointsInterface, ok := dataPoints.([]interface{})
 	if !ok {
-		return nil, nil, errors.New("there is a fucking error when ranging over timeseries")
+		return nil, errors.New("there is a fucking error when ranging over timeseries")
 	}
 	dataPointsRes := make([][]interface{}, 0)
 	for _, ts := range dataPointsInterface {
 		tsInterface, ok := ts.([]interface{})
 		if !ok {
-			return nil, nil, errors.New("there is a fucking error when ranging over timeseries")
+			return nil, errors.New("there is a fucking error when ranging over timeseries")
 		}
 		// here we need to reverse the timeserie and value
 		tsInterface = []interface{}{tsInterface[1], tsInterface[0]}
@@ -108,20 +108,24 @@ func (conn *RedisConn) GetFromRedis(keyName string, from int64, to int64, bucket
 	}
 	log.Println("============")
 	log.Println("timestamp", dataPointsInterface)
-	return dataPointsRes, &keyName, err
+	return dataPointsRes, err
 }
 
 func (conn *RedisConn) GetTimeSeriesfunc(resChann chan [2]interface{}, targetName string, from int64, to int64, interval int64) {
-	dataPointsRes, target, err := conn.GetFromRedis(targetName, from, to, float64(interval))
+	dataPointsRes, err := conn.GetFromRedis(targetName, from, to, float64(interval))
 
 	if err == nil {
 		res := [2]interface{}{
-			*target,
+			targetName,
 			dataPointsRes,
 		}
 		resChann <- res
 	} else {
 		log.Println("fuck", err)
+		resChann <- [2]interface{}{
+			targetName,
+			[][]interface{}{},
+		}
 	}
 }
 
