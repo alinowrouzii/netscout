@@ -91,7 +91,7 @@ func (app *App) checkStatus() {
 
 							log.Println("shit in if", addressPortPair)
 							app.l.Lock()
-							err := redisConn.SetInRedis(addressPortPair, 20)
+							err := redisConn.SetInRedis(addressPortPair, 1)
 							time.Sleep(time.Millisecond)
 							app.l.Unlock()
 							if err != nil {
@@ -100,7 +100,7 @@ func (app *App) checkStatus() {
 						} else {
 							log.Println("shit in else", addressPortPair)
 							app.l.Lock()
-							err := redisConn.SetInRedis(addressPortPair, 10)
+							err := redisConn.SetInRedis(addressPortPair, 0)
 							time.Sleep(time.Millisecond)
 							app.l.Unlock()
 							if err != nil {
@@ -216,7 +216,7 @@ func main() {
 		redisConn: redisConn,
 	}
 
-	// app.checkStatus()
+	go app.checkStatus()
 
 	mux.Use(corsMiddleware)
 	mux.Use(optionsMiddleware)
