@@ -23,6 +23,10 @@ import (
 const (
 	defaultPort      = "4000"
 	defaultRedisAddr = ":6379"
+	// 86400 second (1 day)
+	defaultRedisRetentionTimeInSecond = 86400
+	// 1 second
+	defaultIntervalCheckTimeInSecond = 1
 )
 
 type App struct {
@@ -65,7 +69,7 @@ func connectionStatus(host string, port string) bool {
 	return false
 }
 
-func (app *App) checkStatus() {
+func (app *App) checkStatus(intervalTime int) {
 
 	// forloop over all hosts and create goroutine for each host address
 	for appName := range app.hosts {
@@ -80,9 +84,9 @@ func (app *App) checkStatus() {
 			app.redisConn.AddKeyToRedis(addressPortPair)
 
 			go func(addressPortPair string, redisConn *redisTimeSeries.RedisConn) {
-				ticker := time.NewTicker(1 * time.Second)
+				ticker := time.NewTicker(time.Duration(intervalTime) * time.Second)
 				quit := make(chan struct{})
-
+				
 				for {
 					select {
 					case <-ticker.C:
@@ -207,8 +211,9 @@ func main() {
 	if ymlPath == "" {
 		panic("config path is required. Type --help for more info")
 	}
-	hosts, listenPort, redisAddr := parseYml(ymlPath)
-	redisConn := redisTimeSeries.RedisInit(redisAddr)
+	hosts, listenPort, redisAddr, redisRetentionTime, intervalTime := parseYml(ymlPath)
+	fmt.Println(redisRetentionTime, intervalTime, "here")
+	redisConn := redisTimeSeries.RedisInit(redisAddr, redisRetentionTime)
 
 	mux := tinymux.NewTinyMux()
 	app := &App{
@@ -216,7 +221,7 @@ func main() {
 		redisConn: redisConn,
 	}
 
-	go app.checkStatus()
+	go app.checkStatus(intervalTime)
 
 	mux.Use(corsMiddleware)
 	mux.Use(optionsMiddleware)
@@ -242,7 +247,7 @@ func splitQoutes(s string) []string {
 func parseYml(ymlPath string) (map[string][]struct {
 	address string
 	port    string
-}, string, string) {
+}, string, string, int, int) {
 	parsedYml := make(map[interface{}]interface{})
 	data, err := ioutil.ReadFile(ymlPath)
 	fmt.Println(parsedYml)
@@ -266,6 +271,8 @@ func parseYml(ymlPath string) (map[string][]struct {
 	main, ok := parsedYml["main"]
 	parsedListen := defaultPort
 	parsedRedisAddr := defaultRedisAddr
+	parsedRedisRetentionTime := defaultRedisRetentionTimeInSecond
+	parsedIntervalCheckTime := defaultIntervalCheckTimeInSecond
 
 	if ok {
 		parsedMain, ok := main.(map[string]interface{})
@@ -284,6 +291,22 @@ func parseYml(ymlPath string) (map[string][]struct {
 		redisAddr, ok := parsedMain["redisAddr"]
 		if ok {
 			parsedRedisAddr, ok = redisAddr.(string)
+			if !ok {
+				panic("invalid yaml format")
+			}
+		}
+
+		redisRetentionTimeInSecond, ok := parsedMain["redisRetentionTimeInSecond"]
+		if ok {
+			parsedRedisRetentionTime, ok = redisRetentionTimeInSecond.(int)
+			if !ok {
+				panic("invalid yaml format")
+			}
+		}
+
+		intervalCheckTimeInSecond, ok := parsedMain["intervalCheckTimeInSecond"]
+		if ok {
+			parsedIntervalCheckTime, ok = intervalCheckTimeInSecond.(int)
 			if !ok {
 				panic("invalid yaml format")
 			}
@@ -340,5 +363,5 @@ func parseYml(ymlPath string) (map[string][]struct {
 
 	fmt.Println(parsedListen)
 	fmt.Println(hostsResult)
-	return hostsResult, parsedListen, parsedRedisAddr
+	return hostsResult, parsedListen, parsedRedisAddr, parsedRedisRetentionTime, parsedIntervalCheckTime
 }

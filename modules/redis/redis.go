@@ -12,12 +12,9 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-const (
-	redisRetentionTime = 86400000
-)
-
 type RedisConn struct {
 	pool *redis.Pool
+	redisRetentionTimeInSeconds int
 }
 
 func newPool(server string) *redis.Pool {
@@ -40,11 +37,12 @@ func newPool(server string) *redis.Pool {
 	}
 }
 
-func RedisInit(redisAddr string) *RedisConn {
+func RedisInit(redisAddr string, redisRetentionTime int) *RedisConn {
 	pool := newPool(redisAddr)
 
 	return &RedisConn{
 		pool: pool,
+		redisRetentionTimeInSeconds: redisRetentionTime,
 	}
 }
 
@@ -53,7 +51,8 @@ func (conn *RedisConn) AddKeyToRedis(keyname string) error {
 	defer redisConn.Close()
 
 	// TODO: change alter to create after test
-	ts, err := redisConn.Do("TS.CREATE", keyname, "RETENTION", redisRetentionTime)
+	fmt.Println("here is retention time", conn.redisRetentionTimeInSeconds * 1000)
+	ts, err := redisConn.Do("TS.CREATE", keyname, "RETENTION", conn.redisRetentionTimeInSeconds * 1000)
 
 	log.Println("addKey", ts, err, reflect.TypeOf(err))
 
