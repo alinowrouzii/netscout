@@ -1,0 +1,48 @@
+- name: Building, tagging and pushing image to registry
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars_files:
+    - registry-vars.yml
+
+  tasks:
+    - name: "Build an image"
+      docker_image:
+        name: "{{ registry_host }}/netowrk-status-checker"
+        source: build
+        build:
+          path: ../
+        tag: v1
+        source: build
+        state: present
+
+    - name: Log into private registry and force re-authorization
+      docker_login:
+        registry: "{{ registry_host }}"
+        username: "{{ registry_username }}"
+        password: "{{ registry_password }}"
+        reauthorize: yes
+
+    - name: Push to docker registry
+      docker_image:
+        name: "{{ registry_host }}/netowrk-status-checker"
+        tag: v1
+        push: yes
+        source: local
+- name: Pulling image from {{ registry_host }} and deploying the application
+  hosts: appservermachines
+  vars_files:
+    - registry-vars.yml
+  tasks:
+    - name: Log into private registry and force re-authorization
+      docker_login:
+        registry: "{{ registry_host }}"
+        username: "{{ registry_username }}"
+        password: "{{ registry_password }}"
+        reauthorize: yes
+        
+    - name: Pulling image from {{ registry_host }}
+      docker_image:
+        name: "{{ registry_host }}/netowrk-status-checker"
+        tag: v1
+        source: pull
