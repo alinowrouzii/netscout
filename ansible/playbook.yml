@@ -3,46 +3,70 @@
   connection: local
   gather_facts: no
   vars_files:
-    - registry-vars.yml
+    - vars.yml
 
   tasks:
     - name: "Build an image"
       docker_image:
-        name: "{{ registry_host }}/netowrk-status-checker"
+        name: "{{ registry_vars.registry_host }}/network-status-checker"
         source: build
         build:
           path: ../
         tag: v1
-        source: build
         state: present
 
     - name: Log into private registry and force re-authorization
       docker_login:
-        registry: "{{ registry_host }}"
-        username: "{{ registry_username }}"
-        password: "{{ registry_password }}"
+        registry: "{{ registry_vars.registry_host }}"
+        username: "{{ registry_vars.registry_username }}"
+        password: "{{ registry_vars.registry_password }}"
         reauthorize: yes
 
     - name: Push to docker registry
       docker_image:
-        name: "{{ registry_host }}/netowrk-status-checker"
+        name: "{{ registry_vars.registry_host }}/network-status-checker"
         tag: v1
         push: yes
         source: local
-- name: Pulling image from {{ registry_host }} and deploying the application
+
+- name: Pulling image from {{ registry_vars.registry_host }} and deploying the application
   hosts: appservermachines
   vars_files:
-    - registry-vars.yml
+    - vars.yml
   tasks:
     - name: Log into private registry and force re-authorization
       docker_login:
-        registry: "{{ registry_host }}"
-        username: "{{ registry_username }}"
-        password: "{{ registry_password }}"
+        registry: "{{ registry_vars.registry_host }}"
+        username: "{{ registry_vars.registry_username }}"
+        password: "{{ registry_vars.registry_password }}"
         reauthorize: yes
         
-    - name: Pulling image from {{ registry_host }}
+    - name: Pulling image from {{ registry_vars.registry_host }}
       docker_image:
-        name: "{{ registry_host }}/netowrk-status-checker"
+        name: "{{ registry_vars.registry_host }}/network-status-checker"
         tag: v1
         source: pull
+
+    - name: Pulling redis/stack image from {{ registry_vars.registry_host }}
+      docker_image:
+        name: "{{ registry_vars.registry_host }}/redis/redis-stack"
+        tag: latest
+        source: pull
+    
+    - name: Copy docker compose with config.yml file
+      become: yes
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ file_specs.file_dir }}"
+        owner: "{{ file_specs.file_owner }}"
+        group: "{{ file_specs.file_group }}"
+        mode: '0644'
+      with_fileglob:
+        - "../docker-compose.yml"
+        - "../config.yml"
+    
+    - name: Running compose file
+      community.docker.docker_compose:
+        project_src: "{{ file_specs.file_dir }}"
+        files:
+          - docker-compose.yml
