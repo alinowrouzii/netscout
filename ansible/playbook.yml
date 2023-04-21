@@ -7,7 +7,7 @@
 
   tasks:
     - name: "Build an image"
-      docker_image:
+      community.docker.docker_image:
         name: "{{ registry_vars.registry_host }}/network-status-checker"
         source: build
         build:
@@ -16,14 +16,14 @@
         state: present
 
     - name: Log into private registry and force re-authorization
-      docker_login:
+      community.docker.docker_login:
         registry: "{{ registry_vars.registry_host }}"
         username: "{{ registry_vars.registry_username }}"
         password: "{{ registry_vars.registry_password }}"
         reauthorize: yes
 
     - name: Push to docker registry
-      docker_image:
+      community.docker.docker_image:
         name: "{{ registry_vars.registry_host }}/network-status-checker"
         tag: v1
         push: yes
@@ -35,20 +35,20 @@
     - vars.yml
   tasks:
     - name: Log into private registry and force re-authorization
-      docker_login:
+      community.docker.docker_login:
         registry: "{{ registry_vars.registry_host }}"
         username: "{{ registry_vars.registry_username }}"
         password: "{{ registry_vars.registry_password }}"
         reauthorize: yes
         
     - name: Pulling image from {{ registry_vars.registry_host }}
-      docker_image:
+      community.docker.docker_image:
         name: "{{ registry_vars.registry_host }}/network-status-checker"
         tag: v1
         source: pull
 
     - name: Pulling redis/stack image from {{ registry_vars.registry_host }}
-      docker_image:
+      community.docker.docker_image:
         name: "{{ registry_vars.registry_host }}/redis/redis-stack"
         tag: latest
         source: pull
