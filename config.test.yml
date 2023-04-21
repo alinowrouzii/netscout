@@ -2,7 +2,7 @@
 
 main:
   listen: "4000"
-  redisAddr: ":6379"
+  redisAddr: "redis:6379"
 
 apps:
   app-name:

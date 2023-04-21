@@ -4,7 +4,7 @@ services:
   network-status-checker:
     image: registry.efarda.ir/network-status-checker:v1
     volumes:
-      - config.yml:/etc/network-status-checker/ocnfig.yml:ro
+      - ./config.yml:/etc/network-status-checker/ocnfig.yml:ro
     ports:
       - 4000:4000
     depends_on:
