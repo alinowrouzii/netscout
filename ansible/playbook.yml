@@ -1,0 +1,72 @@
+- name: Building, tagging and pushing image to registry
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: "Build an image"
+      community.docker.docker_image:
+        name: "{{ registry_vars.registry_host }}/network-status-checker"
+        source: build
+        build:
+          path: ../
+        tag: v1
+        state: present
+
+    - name: Log into private registry and force re-authorization
+      community.docker.docker_login:
+        registry: "{{ registry_vars.registry_host }}"
+        username: "{{ registry_vars.registry_username }}"
+        password: "{{ registry_vars.registry_password }}"
+        reauthorize: yes
+
+    - name: Push to docker registry
+      community.docker.docker_image:
+        name: "{{ registry_vars.registry_host }}/network-status-checker"
+        tag: v1
+        push: yes
+        source: local
+
+- name: Pulling image from {{ registry_vars.registry_host }} and deploying the application
+  hosts: appservermachines
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Log into private registry and force re-authorization
+      community.docker.docker_login:
+        registry: "{{ registry_vars.registry_host }}"
+        username: "{{ registry_vars.registry_username }}"
+        password: "{{ registry_vars.registry_password }}"
+        reauthorize: yes
+        
+    - name: Pulling image from {{ registry_vars.registry_host }}
+      community.docker.docker_image:
+        name: "{{ registry_vars.registry_host }}/network-status-checker"
+        tag: v1
+        source: pull
+
+    - name: Pulling redis/stack image from {{ registry_vars.registry_host }}
+      community.docker.docker_image:
+        name: "{{ registry_vars.registry_host }}/redis/redis-stack"
+        tag: latest
+        source: pull
+    
+    - name: Copy docker compose with config.yml file
+      become: yes
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ file_specs.file_dir }}"
+        owner: "{{ file_specs.file_owner }}"
+        group: "{{ file_specs.file_group }}"
+        mode: '0644'
+      with_fileglob:
+        - "../docker-compose.yml"
+        - "../config.yml"
+    
+    - name: Running compose file
+      community.docker.docker_compose:
+        project_src: "{{ file_specs.file_dir }}"
+        files:
+          - docker-compose.yml

@@ -15,3 +15,12 @@ in grafana with that plugin.
 go build
 ./network-status-checker --config config.yml
 ```
+
+## Deploy using ansible
+```
+cd ansible
+ansible-galaxy collection install community.docker
+ansible-playbook -i inventory.yml playbook.yml -k -K
+```
+
+#### TODO: add health-check to containers

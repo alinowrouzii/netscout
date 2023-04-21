@@ -1,0 +1,13 @@
+version: '3.9'
+
+services:
+  network-status-checker:
+    image: registry.efarda.ir/network-status-checker:v1
+    volumes:
+      - ./config.yml:/etc/network-status-checker/ocnfig.yml:ro
+    ports:
+      - 4000:4000
+    depends_on:
+      - redis
+  redis:
+    image: registry.efarda.ir/redis/redis-stack:latest
