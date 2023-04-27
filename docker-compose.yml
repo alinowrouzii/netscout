@@ -11,3 +11,8 @@ services:
       - redis
   redis:
     image: registry.efarda.ir/redis/redis-stack:latest
+    volumes:
+      - redis-stack-data:/data
+
+volumes:
+  redis-stack-data:
