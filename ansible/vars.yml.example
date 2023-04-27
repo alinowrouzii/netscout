@@ -1,0 +1,9 @@
+registry_vars:
+  registry_username: registry-username
+  registry_password: registry-password
+  registry_host: registry-addr.org
+
+file_specs:
+  file_owner: file-owner
+  file_group: file-group
+  file_dir: /opt/network-status-checker/

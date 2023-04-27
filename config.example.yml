@@ -1,0 +1,15 @@
+# version: "3"
+
+main:
+  listen: "4000"
+  redisAddr: "redis:6379"
+
+apps:
+  app-name:
+    hosts:
+      - address: "localhost"
+        port: "80"
+      - address: "localhost"
+        port: "4041"
+      - address: "localhost"
+        port: "4040"

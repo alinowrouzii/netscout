@@ -1,0 +1,5 @@
+appservermachines:
+  hosts:
+    servername:
+      ansible_host: server-ip
+      ansible_user: user-to-login
