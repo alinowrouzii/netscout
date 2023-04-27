@@ -23,4 +23,4 @@ ansible-galaxy collection install community.docker
 ansible-playbook -i inventory.yml playbook.yml -k -K
 ```
 
-#### TODO: add health-check to containers
+##### Rename the .yml.example files to .yml

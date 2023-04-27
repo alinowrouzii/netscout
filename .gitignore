@@ -1,1 +1,3 @@
 config.yml
+**/vars.yml
+**/inventory.yml
